@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitor de Suelo</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #0a0f14;
+      --surface: #111820;
+      --border:  #1e2d3d;
+      --text:    #cdd9e5;
+      --muted:   #4a5568;
+      --accent:  #00d4aa;
+      --mono:    'Space Mono', monospace;
+      --sans:    'DM Sans', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 48px;
+    }
+    header {
+      width: 100%; max-width: 480px;
+      margin-bottom: 28px;
+    }
+    .label-top {
+      font-family: var(--mono);
+      font-size: 0.63rem; letter-spacing: 3px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    h1 {
+      font-family: var(--mono);
+      font-size: 1.4rem; font-weight: 700;
+      color: var(--accent); letter-spacing: 1px;
+    }
+    .status-bar {
+      width: 100%; max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;
+      font-size: 0.78rem;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%; flex-shrink: 0;
+      transition: background 0.4s;
+    }
+    .dot.online  { background: #00d4aa; box-shadow: 0 0 8px #00d4aa88; animation: pulse 2s infinite; }
+    .dot.offline { background: #e74c3c; }
+    .dot.loading { background: #f39c12; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    #status-text { flex: 1; color: var(--text); }
+    #last-update { font-family: var(--mono); font-size: 0.63rem; color: var(--muted); }
+
+    .stale-warning {
+      width: 100%; max-width: 480px;
+      background: color-mix(in srgb, #f39c12 10%, transparent);
+      border: 1px solid color-mix(in srgb, #f39c12 30%, transparent);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 0.76rem; color: #f39c12;
+      margin-bottom: 14px;
+      display: none; gap: 8px; align-items: center;
+    }
+    .stale-warning.visible { display: flex; }
+
+    .cards {
+      width: 100%; max-width: 480px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 22px 18px;
+      position: relative; overflow: hidden;
+      transition: border-color 0.4s;
+    }
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--card-color, var(--accent));
+      border-radius: 16px 16px 0 0;
+      transition: background 0.4s;
+    }
+    .card-label {
+      font-family: var(--mono);
+      font-size: 0.62rem; letter-spacing: 2px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .card-value {
+      font-family: var(--mono);
+      font-size: 3.4rem; font-weight: 700; line-height: 1;
+      color: var(--card-color, var(--accent));
+      transition: color 0.4s;
+    }
+    .card-unit { font-size: 1.2rem; font-weight: 400; color: var(--muted); }
+    .card-badge {
+      display: inline-block;
+      margin-top: 12px; padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem; font-weight: 600;
+      background: color-mix(in srgb, var(--card-color, var(--accent)) 15%, transparent);
+      color: var(--card-color, var(--accent));
+      border: 1px solid color-mix(in srgb, var(--card-color, var(--accent)) 30%, transparent);
+      transition: all 0.4s;
+    }
+    .card-adc {
+      font-family: var(--mono);
+      font-size: 0.65rem; color: var(--muted); margin-top: 6px;
+    }
+    .card-time {
+      font-family: var(--mono);
+      font-size: 0.62rem; color: var(--muted); margin-top: 10px;
+    }
+
+    /* ── Gráfico ── */
+    .card-chart {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 22px 18px;
+      position: relative; overflow: hidden;
+    }
+    .card-chart::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--chart-top-color, #27ae60);
+      border-radius: 16px 16px 0 0;
+    }
+    .chart-legend {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px;
+    }
+    .chart-legend-dot {
+      width: 10px; height: 3px;
+      background: #27ae60;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .chart-legend-label {
+      font-family: var(--mono);
+      font-size: 0.62rem; letter-spacing: 2px;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .chart-last-ts {
+      font-family: var(--mono);
+      font-size: 0.62rem; color: var(--muted);
+      margin-top: 10px; text-align: right;
+    }
+    #no-data-msg {
+      display: none;
+      text-align: center;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ── Clima AccuWeather ── */
+    .card-weather {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px 22px 18px;
+      position: relative; overflow: hidden;
+    }
+    .card-weather::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: #f39c12;
+      border-radius: 16px 16px 0 0;
+    }
+    .weather-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .weather-title {
+      font-family: var(--mono);
+      font-size: 0.62rem; letter-spacing: 2px;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .weather-location {
+      font-family: var(--mono);
+      font-size: 0.62rem; color: #f39c12;
+    }
+    .weather-main {
+      display: flex; align-items: center; gap: 16px;
+      margin-bottom: 14px;
+    }
+    .weather-icon { font-size: 2.8rem; line-height: 1; flex-shrink: 0; }
+    .weather-temp-ext {
+      font-family: var(--mono);
+      font-size: 2.6rem; font-weight: 700; line-height: 1;
+      color: #f39c12;
+    }
+    .weather-temp-ext span { font-size: 1rem; font-weight: 400; color: var(--muted); }
+    .weather-desc { font-size: 0.85rem; color: var(--text); margin-top: 4px; }
+    .weather-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 8px; margin-top: 4px;
+    }
+    .weather-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .weather-item-label {
+      font-family: var(--mono);
+      font-size: 0.58rem; letter-spacing: 1px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .weather-item-value {
+      font-family: var(--mono);
+      font-size: 1rem; font-weight: 700;
+      color: var(--text);
+    }
+    .precip-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 12px; padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem; font-weight: 600;
+      background: rgba(231,76,60,0.12);
+      color: #e74c3c;
+      border: 1px solid rgba(231,76,60,0.25);
+    }
+    .precip-badge.no-precip {
+      background: rgba(39,174,96,0.12);
+      color: #27ae60;
+      border-color: rgba(39,174,96,0.25);
+    }
+    .weather-error {
+      font-family: var(--mono);
+      font-size: 0.72rem; color: var(--muted);
+      text-align: center; padding: 12px 0;
+    }
+    .weather-ts {
+      font-family: var(--mono);
+      font-size: 0.60rem; color: var(--muted);
+      text-align: right; margin-top: 10px;
+    }
+
+    .btn-refresh {
+      width: 100%; max-width: 480px;
+      margin-top: 18px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 50px;
+      padding: 13px;
+      color: var(--text);
+      font-family: var(--mono); font-size: 0.82rem;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-refresh:hover { border-color: var(--accent); color: var(--accent); }
+    .countdown {
+      font-family: var(--mono); font-size: 0.65rem;
+      color: var(--muted); margin-top: 8px; text-align: center;
+    }
+    footer {
+      margin-top: 40px;
+      font-family: var(--mono); font-size: 0.6rem;
+      color: #1e2d3d; letter-spacing: 1px;
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       DASHBOARD DE HISTORIAL
+    ═══════════════════════════════════════════════════════════ */
+    .dashboard-section {
+      width: 100%; max-width: 480px;
+      margin-top: 32px;
+    }
+    .dashboard-title {
+      font-family: var(--mono);
+      font-size: 0.62rem; letter-spacing: 3px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .dashboard-title span {
+      color: var(--accent);
+    }
+
+    /* Filtros */
+    .filter-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      margin-bottom: 14px;
+      position: relative; overflow: hidden;
+    }
+    .filter-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--accent);
+      border-radius: 16px 16px 0 0;
+    }
+    .filter-label {
+      font-family: var(--mono);
+      font-size: 0.58rem; letter-spacing: 2px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .filter-row {
+      display: flex; gap: 10px; align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    .filter-group {
+      display: flex; flex-direction: column; gap: 5px;
+      flex: 1; min-width: 100px;
+    }
+    .filter-group label {
+      font-family: var(--mono);
+      font-size: 0.58rem; letter-spacing: 1px;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .filter-group input {
+      background: #0d1520;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-family: var(--mono); font-size: 0.78rem;
+      width: 100%;
+      transition: border-color 0.2s;
+    }
+    .filter-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .filter-group input::-webkit-calendar-picker-indicator {
+      filter: invert(0.6);
+    }
+    .btn-filter {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 9px 18px;
+      color: #0a0f14;
+      font-family: var(--mono); font-size: 0.75rem; font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+    }
+    .btn-filter:hover { opacity: 0.85; }
+    .btn-filter:active { opacity: 0.7; }
+
+    /* Resumen estadístico */
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px; margin-bottom: 14px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 0.56rem; letter-spacing: 1.5px;
+      color: var(--muted); text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 1.5rem; font-weight: 700;
+      line-height: 1;
+    }
+    .stat-sub {
+      font-family: var(--mono);
+      font-size: 0.58rem; color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Gráficos del historial */
+    .hist-chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      margin-bottom: 14px;
+      position: relative; overflow: hidden;
+    }
+    .hist-chart-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--hist-color, var(--accent));
+      border-radius: 16px 16px 0 0;
+    }
+
+    /* Tabla de registros */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      overflow: hidden;
+      position: relative;
+    }
+    .table-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: #8e44ad;
+      border-radius: 16px 16px 0 0;
+    }
+    .table-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .table-count {
+      font-family: var(--mono); font-size: 0.62rem; color: var(--muted);
+    }
+    .table-scroll {
+      overflow-x: auto;
+      margin: 0 -4px;
+    }
+    table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.76rem;
+    }
+    thead tr {
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      font-family: var(--mono);
+      font-size: 0.56rem; letter-spacing: 1.5px;
+      color: var(--muted); text-transform: uppercase;
+      text-align: left; padding: 0 8px 10px;
+      white-space: nowrap;
+    }
+    td {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: var(--text);
+      padding: 9px 8px;
+      border-bottom: 1px solid rgba(30,45,61,0.5);
+      white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,0.025); }
+    .td-temp { color: #27ae60; }
+    .td-hum  { color: #2980b9; }
+
+    .hist-empty {
+      text-align: center; padding: 24px 0;
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .hist-loading {
+      text-align: center; padding: 24px 0;
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--accent); animation: pulse 1.2s infinite;
+    }
+
+    /* ── Botón descarga Excel ── */
+    .btn-download-wrap {
+      width: 100%; margin-bottom: 14px;
+    }
+    .btn-download {
+      width: 100%;
+      background: transparent;
+      border: 1px solid #27ae60;
+      border-radius: 10px;
+      padding: 13px 18px;
+      color: #27ae60;
+      font-family: var(--mono); font-size: 0.78rem; font-weight: 700;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-download:hover {
+      background: rgba(39,174,96,0.12);
+    }
+    .btn-download:active { opacity: 0.75; }
+    .btn-download:disabled {
+      border-color: var(--border);
+      color: var(--muted);
+      cursor: not-allowed;
+      background: transparent;
+    }
+    .btn-download .dl-icon { font-size: 1rem; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="label-top">ESP32-S3 · DS18B20 + SEN0193</div>
+    <h1>🌿 Monitor de Suelo</h1>
+  </header>
+
+  <div class="status-bar">
+    <div class="dot loading" id="dot"></div>
+    <span id="status-text">Cargando datos...</span>
+    <span id="last-update">—</span>
+  </div>
+
+  <div class="stale-warning" id="stale-warning">
+    ⚠️ Arduino sin enviar datos — mostrando última lectura guardada
+  </div>
+
+  <div class="cards">
+    <div class="card" id="card-temp" style="--card-color:#27ae60">
+      <div class="card-label">🌡️ Temperatura del suelo</div>
+      <div class="card-value" id="val-temp">—<span class="card-unit"> °C</span></div>
+    </div>
+    <div class="card" id="card-hum" style="--card-color:#27ae60">
+      <div class="card-label">💧 Humedad volumétrica (VWC)</div>
+      <div class="card-value" id="val-vwc">—<span class="card-unit"> %</span></div>
+      <div class="card-badge" id="badge-estado">—</div>
+      <div class="card-adc" id="val-adc"></div>
+      <div class="card-time" id="val-time"></div>
+    </div>
+
+    <!-- ── Gráfico de temperatura ── -->
+    <div class="card-chart">
+      <div class="chart-legend">
+        <div class="chart-legend-dot"></div>
+        <span class="chart-legend-label">Historial de temperatura · últimos 30 registros</span>
+      </div>
+      <div style="position: relative; width: 100%; height: 260px;">
+        <canvas id="tempChart" role="img"
+          aria-label="Gráfico de línea con los últimos 30 registros de temperatura del suelo en grados Celsius, ordenados cronológicamente.">
+          Temperatura del suelo: últimos 30 registros.
+        </canvas>
+      </div>
+      <p id="no-data-msg">Sin datos aún — esperando lecturas del Arduino...</p>
+      <p class="chart-last-ts" id="chart-last-ts"></p>
+    </div>
+
+    <!-- ── Gráfico de humedad ── -->
+    <div class="card-chart" style="--chart-top-color:#2980b9;">
+      <div class="chart-legend">
+        <div class="chart-legend-dot" style="background:#2980b9;"></div>
+        <span class="chart-legend-label">Historial de humedad (VWC) · últimos 30 registros</span>
+      </div>
+      <div style="position: relative; width: 100%; height: 260px;">
+        <canvas id="vwcChart" role="img"
+          aria-label="Gráfico de línea con los últimos 30 registros de humedad volumétrica del suelo en porcentaje, ordenados cronológicamente.">
+          Humedad del suelo: últimos 30 registros.
+        </canvas>
+      </div>
+      <p id="no-data-msg-vwc">Sin datos aún — esperando lecturas del Arduino...</p>
+      <p class="chart-last-ts" id="chart-last-ts-vwc"></p>
+    </div>
+  </div>
+
+  <!-- ── Tarjeta del clima exterior (AccuWeather) ── -->
+  <div class="card-weather" id="card-weather" style="width:100%;max-width:480px;margin-top:14px;">
+    <div class="weather-header">
+      <span class="weather-title">☁️ Clima exterior</span>
+      <span class="weather-location">Peñalolén, Santiago</span>
+    </div>
+    <div id="weather-content">
+      <p class="weather-error">Cargando clima...</p>
+    </div>
+    <p class="weather-ts" id="weather-ts"></p>
+  </div>
+
+  <button class="btn-refresh" onclick="fetchDatos()">↻ Actualizar ahora</button>
+  <p class="countdown">Próxima actualización en <span id="ct">30</span>s</p>
+
+
+  <!-- ═══════════════════════════════════════════════════════════
+       DASHBOARD DE HISTORIAL
+  ═══════════════════════════════════════════════════════════ -->
+  <div class="dashboard-section">
+    <div class="dashboard-title">📊 Historial de la base de datos <span>·</span> Filtrar registros</div>
+
+    <!-- Botón descarga Excel completo -->
+    <div class="btn-download-wrap">
+      <button class="btn-download" id="btn-excel" onclick="descargarExcel()">
+        <span class="dl-icon">⬇️</span>
+        Descargar Excel — todos los registros
+      </button>
+    </div>
+
+    <!-- Filtros -->
+    <div class="filter-card">
+      <div class="filter-label">Período</div>
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>Desde (fecha)</label>
+          <input type="date" id="f-desde" />
+        </div>
+        <div class="filter-group">
+          <label>Hasta (fecha)</label>
+          <input type="date" id="f-hasta" />
+        </div>
+      </div>
+      <div class="filter-row" style="margin-top:10px;">
+        <div class="filter-group">
+          <label>Hora inicio</label>
+          <input type="time" id="f-hora-desde" value="00:00" />
+        </div>
+        <div class="filter-group">
+          <label>Hora fin</label>
+          <input type="time" id="f-hora-hasta" value="23:59" />
+        </div>
+        <button class="btn-filter" onclick="cargarHistorial()">Buscar</button>
+      </div>
+    </div>
+
+    <!-- Estadísticas del período -->
+    <div class="stats-grid" id="stats-grid" style="display:none;">
+      <div class="stat-card">
+        <div class="stat-label">🌡️ Temp. promedio</div>
+        <div class="stat-value" id="stat-temp-avg" style="color:#27ae60">—</div>
+        <div class="stat-sub" id="stat-temp-range">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">💧 Humedad promedio</div>
+        <div class="stat-value" id="stat-hum-avg" style="color:#2980b9">—</div>
+        <div class="stat-sub" id="stat-hum-range">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">📅 Registros</div>
+        <div class="stat-value" id="stat-total" style="color:var(--accent)">—</div>
+        <div class="stat-sub" id="stat-periodo">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">🕐 Último registro</div>
+        <div class="stat-value" id="stat-ultimo-hora" style="color:#8e44ad; font-size:1.1rem">—</div>
+        <div class="stat-sub" id="stat-ultimo-fecha">—</div>
+      </div>
+    </div>
+
+    <!-- Gráfico temperatura historial -->
+    <div class="hist-chart-card" id="hist-temp-card" style="--hist-color:#27ae60; display:none;">
+      <div class="chart-legend">
+        <div class="chart-legend-dot" style="background:#27ae60;"></div>
+        <span class="chart-legend-label">Temperatura · período seleccionado</span>
+      </div>
+      <div style="position:relative; width:100%; height:240px;">
+        <canvas id="histTempChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Gráfico humedad historial -->
+    <div class="hist-chart-card" id="hist-hum-card" style="--hist-color:#2980b9; display:none;">
+      <div class="chart-legend">
+        <div class="chart-legend-dot" style="background:#2980b9;"></div>
+        <span class="chart-legend-label">Humedad VWC · período seleccionado</span>
+      </div>
+      <div style="position:relative; width:100%; height:240px;">
+        <canvas id="histHumChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Tabla de registros -->
+    <div class="table-card" id="table-card">
+      <div class="table-header">
+        <div class="filter-label" style="margin:0;">Registros</div>
+        <div class="table-count" id="table-count">—</div>
+      </div>
+      <div id="table-body">
+        <div class="hist-empty">Usa los filtros para buscar registros</div>
+      </div>
+    </div>
+  </div>
+
+
+  <footer style="margin-top:40px;">MONITOR DE SUELO · SERVIDOR EN LA NUBE</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+  /* ── Utilidades de color ── */
+  function colorVWC(v) {
+    if (v < 10) return '#e74c3c';
+    if (v < 20) return '#e67e22';
+    if (v < 35) return '#27ae60';
+    if (v < 50) return '#2980b9';
+    return '#8e44ad';
+  }
+  function colorTemp(t) {
+    if (t < 10) return '#2980b9';
+    if (t < 25) return '#27ae60';
+    if (t < 35) return '#e67e22';
+    return '#e74c3c';
+  }
+  function estadoVWC(v) {
+    if (v < 10)  return 'Suelo seco';
+    if (v < 20)  return 'Humedad baja';
+    if (v < 35)  return 'Humedad óptima';
+    if (v < 50)  return 'Humedad alta';
+    return 'Suelo saturado';
+  }
+  function tiempoDesde(isoString) {
+    const mins = Math.floor((Date.now() - new Date(isoString)) / 60000);
+    if (mins < 1)  return 'hace menos de 1 min';
+    if (mins < 60) return `hace ${mins} min`;
+    const hrs = Math.floor(mins / 60);
+    return `hace ${hrs} h`;
+  }
+
+  /* ── Gráfico en vivo ── */
+  let tempChart = null;
+  let historial = [];
+  let vwcChart = null;
+  let historialVwc = [];
+
+  function renderChart() {
+    const labels = historial.map((_, i) => i + 1);
+    const data   = historial;
+    const gridColor = 'rgba(255,255,255,0.07)';
+    const zeroColor = 'rgba(255,255,255,0.25)';
+    const textColor = '#4a5568';
+
+    if (tempChart) {
+      tempChart.data.labels   = labels;
+      tempChart.data.datasets[0].data = data;
+      tempChart.update('none');
+      return;
+    }
+
+    tempChart = new Chart(document.getElementById('tempChart'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Temperatura (°C)',
+          data: data,
+          borderColor: '#27ae60',
+          backgroundColor: 'rgba(39,174,96,0.07)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#27ae60',
+          pointBorderColor: '#111820',
+          pointBorderWidth: 1.5,
+          tension: 0.3,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)} °C` } }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Registro N°', color: textColor, font: { size: 11 } },
+            ticks: {
+              color: textColor, font: { size: 11 }, autoSkip: false, maxRotation: 0,
+              callback: function(val, idx) {
+                const n = this.chart.data.labels.length;
+                if (n <= 10) return idx + 1;
+                if (idx === 0) return 1;
+                if (idx === n - 1) return n;
+                if ((idx + 1) % 5 === 0) return idx + 1;
+                return '';
+              }
+            },
+            grid: { color: gridColor }
+          },
+          y: {
+            title: { display: true, text: 'Temperatura (°C)', color: textColor, font: { size: 11 } },
+            ticks: { color: textColor, font: { size: 11 }, callback: v => v.toFixed(1) + ' °C' },
+            grid: {
+              color: ctx => ctx.tick.value === 0 ? zeroColor : gridColor,
+              lineWidth: ctx => ctx.tick.value === 0 ? 1.5 : 1
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderVwcChart() {
+    const labels = historialVwc.map((_, i) => i + 1);
+    const data   = historialVwc;
+    const gridColor = 'rgba(255,255,255,0.07)';
+    const textColor = '#4a5568';
+
+    if (vwcChart) {
+      vwcChart.data.labels = labels;
+      vwcChart.data.datasets[0].data = data;
+      vwcChart.update('none');
+      return;
+    }
+
+    vwcChart = new Chart(document.getElementById('vwcChart'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Humedad VWC (%)',
+          data: data,
+          borderColor: '#2980b9',
+          backgroundColor: 'rgba(41,128,185,0.07)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#2980b9',
+          pointBorderColor: '#111820',
+          pointBorderWidth: 1.5,
+          tension: 0.3,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)} %` } }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Registro N°', color: textColor, font: { size: 11 } },
+            ticks: {
+              color: textColor, font: { size: 11 }, autoSkip: false, maxRotation: 0,
+              callback: function(val, idx) {
+                const n = this.chart.data.labels.length;
+                if (n <= 10) return idx + 1;
+                if (idx === 0) return 1;
+                if (idx === n - 1) return n;
+                if ((idx + 1) % 5 === 0) return idx + 1;
+                return '';
+              }
+            },
+            grid: { color: gridColor }
+          },
+          y: {
+            min: 0, max: 100,
+            title: { display: true, text: 'Humedad VWC (%)', color: textColor, font: { size: 11 } },
+            ticks: { color: textColor, font: { size: 11 }, stepSize: 10, callback: v => v + ' %' },
+            grid: { color: gridColor }
+          }
+        }
+      }
+    });
+  }
+
+  /* ── Fetch principal ── */
+  async function fetchDatos() {
+    const dot        = document.getElementById('dot');
+    const statusText = document.getElementById('status-text');
+    const stale      = document.getElementById('stale-warning');
+    dot.className    = 'dot loading';
+    statusText.textContent = 'Actualizando...';
+
+    try {
+      const res = await fetch('/api/datos');
+      if (!res.ok) throw new Error('sin datos');
+      const d = await res.json();
+
+      const cT = colorTemp(d.temperatura);
+      const cH = colorVWC(d.vwc);
+
+      document.getElementById('val-temp').innerHTML =
+        `${d.temperatura.toFixed(1)}<span class="card-unit"> °C</span>`;
+      document.getElementById('val-vwc').innerHTML =
+        `${d.vwc.toFixed(1)}<span class="card-unit"> %</span>`;
+      document.getElementById('badge-estado').textContent =
+        d.estado || estadoVWC(d.vwc);
+      document.getElementById('val-adc').textContent =
+        d.adc ? `ADC raw: ${d.adc}` : '';
+      document.getElementById('val-time').textContent =
+        d.timestamp ? `Última lectura del Arduino: ${tiempoDesde(d.timestamp)}` : '';
+
+      document.getElementById('card-temp').style.setProperty('--card-color', cT);
+      document.getElementById('card-hum').style.setProperty('--card-color', cH);
+      document.getElementById('badge-estado').style.cssText =
+        `background:color-mix(in srgb,${cH} 15%,transparent);color:${cH};border-color:color-mix(in srgb,${cH} 30%,transparent)`;
+
+      const mins = Math.floor((Date.now() - new Date(d.timestamp)) / 60000);
+      if (mins >= 2) {
+        stale.classList.add('visible');
+        dot.className = 'dot offline';
+        statusText.textContent = 'Arduino sin enviar datos';
+      } else {
+        stale.classList.remove('visible');
+        dot.className = 'dot online';
+        statusText.textContent = 'Servidor activo · Arduino enviando datos';
+      }
+
+      document.getElementById('last-update').textContent =
+        new Date().toLocaleTimeString('es-CL');
+
+      if (typeof d.temperatura === 'number') {
+        historial.push(d.temperatura);
+        if (historial.length > 30) historial.shift();
+        renderChart();
+        document.getElementById('no-data-msg').style.display = 'none';
+        document.getElementById('tempChart').style.display = '';
+        if (d.timestamp) {
+          document.getElementById('chart-last-ts').textContent =
+            'Última lectura: ' + new Date(d.timestamp).toLocaleString('es-CL');
+        }
+      }
+
+      if (typeof d.vwc === 'number') {
+        historialVwc.push(d.vwc);
+        if (historialVwc.length > 30) historialVwc.shift();
+        renderVwcChart();
+        document.getElementById('no-data-msg-vwc').style.display = 'none';
+        document.getElementById('vwcChart').style.display = '';
+        if (d.timestamp) {
+          document.getElementById('chart-last-ts-vwc').textContent =
+            'Última lectura: ' + new Date(d.timestamp).toLocaleString('es-CL');
+        }
+      }
+
+    } catch(e) {
+      dot.className = 'dot offline';
+      statusText.textContent = 'Error al conectar con el servidor';
+      if (historial.length === 0) {
+        document.getElementById('no-data-msg').style.display = 'block';
+        document.getElementById('tempChart').style.display = 'none';
+      }
+      if (historialVwc.length === 0) {
+        document.getElementById('no-data-msg-vwc').style.display = 'block';
+        document.getElementById('vwcChart').style.display = 'none';
+      }
+    }
+  }
+
+  /* ── AccuWeather ── */
+  const AW_API_KEY  = 'zpka_27505f0e8eef4922b401d53fa2e58103_91de0186';
+  const AW_LOCATION = '349727';
+  const AW_URL      = `https://dataservice.accuweather.com/currentconditions/v1/${AW_LOCATION}?apikey=${AW_API_KEY}&language=es-es&details=true`;
+
+  function iconEmoji(n) {
+    if (n >= 1  && n <= 5)  return '☀️';
+    if (n >= 6  && n <= 8)  return '🌤️';
+    if (n >= 11 && n <= 12) return '🌥️';
+    if (n >= 13 && n <= 14) return '⛅';
+    if (n >= 15 && n <= 16) return '🌦️';
+    if (n >= 17 && n <= 18) return '⛈️';
+    if (n >= 19 && n <= 25) return '🌧️';
+    if (n >= 26 && n <= 29) return '🌩️';
+    if (n >= 30 && n <= 31) return '🌡️';
+    if (n >= 32 && n <= 38) return '🌬️';
+    if (n >= 39 && n <= 44) return '🌧️';
+    return '🌡️';
+  }
+
+  async function fetchClima() {
+    try {
+      const res = await fetch(AW_URL);
+      if (!res.ok) throw new Error('error API');
+      const data = await res.json();
+      const w = data[0];
+
+      const tempC      = w.Temperature.Metric.Value;
+      const sensacion  = w.RealFeelTemperature?.Metric?.Value ?? '—';
+      const humedad    = w.RelativeHumidity ?? '—';
+      const viento     = w.Wind?.Speed?.Metric?.Value ?? '—';
+      const nubosidad  = w.CloudCover ?? '—';
+      const hasPrecip  = w.HasPrecipitation;
+      const tipoPrecip = w.PrecipitationType;
+      const descripcion = w.WeatherText;
+      const emoji      = iconEmoji(w.WeatherIcon);
+
+      document.getElementById('weather-content').innerHTML = `
+        <div class="weather-main">
+          <div class="weather-icon">${emoji}</div>
+          <div>
+            <div class="weather-temp-ext">${tempC.toFixed(1)}<span> °C</span></div>
+            <div class="weather-desc">${descripcion}</div>
+          </div>
+        </div>
+        <div class="weather-grid">
+          <div class="weather-item">
+            <div class="weather-item-label">Sensación térmica</div>
+            <div class="weather-item-value">${typeof sensacion === 'number' ? sensacion.toFixed(1) + ' °C' : '—'}</div>
+          </div>
+          <div class="weather-item">
+            <div class="weather-item-label">Humedad relativa</div>
+            <div class="weather-item-value">${humedad !== '—' ? humedad + ' %' : '—'}</div>
+          </div>
+          <div class="weather-item">
+            <div class="weather-item-label">Viento</div>
+            <div class="weather-item-value">${viento !== '—' ? viento + ' km/h' : '—'}</div>
+          </div>
+          <div class="weather-item">
+            <div class="weather-item-label">Nubosidad</div>
+            <div class="weather-item-value">${nubosidad !== '—' ? nubosidad + ' %' : '—'}</div>
+          </div>
+        </div>
+        <div class="precip-badge ${hasPrecip ? '' : 'no-precip'}">
+          ${hasPrecip ? `🌧️ Precipitación: ${tipoPrecip}` : '✅ Sin precipitaciones'}
+        </div>
+      `;
+
+      document.getElementById('weather-ts').textContent =
+        'Actualizado: ' + new Date().toLocaleTimeString('es-CL');
+
+    } catch(e) {
+      document.getElementById('weather-content').innerHTML =
+        `<p class="weather-error">No se pudo obtener el clima — verifica tu API key</p>`;
+    }
+  }
+
+  fetchClima();
+  setInterval(fetchClima, 10 * 60 * 1000);
+
+  /* ── Countdown ── */
+  let s = 30;
+  setInterval(() => {
+    s--;
+    const el = document.getElementById('ct');
+    if (el) el.textContent = s + 's';
+    if (s <= 0) { s = 30; fetchDatos(); }
+  }, 1000);
+
+  fetchDatos();
+
+
+  /* ══════════════════════════════════════════════════════════════
+     DASHBOARD DE HISTORIAL
+  ══════════════════════════════════════════════════════════════ */
+  let histTempChart = null;
+  let histHumChart  = null;
+
+  // Inicializar filtros con fecha de hoy (hora Chile)
+  function hoyChile() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
+  }
+
+  document.getElementById('f-desde').value = hoyChile();
+  document.getElementById('f-hasta').value = hoyChile();
+
+  // Cargar rango disponible al iniciar
+  async function cargarRango() {
+    try {
+      const res = await fetch('/api/historial/rango');
+      if (!res.ok) return;
+      const { primera, ultima } = await res.json();
+      if (primera) {
+        document.getElementById('f-desde').min = primera;
+        document.getElementById('f-desde').value = primera;
+        document.getElementById('f-hasta').min = primera;
+        document.getElementById('f-hasta').value = ultima || hoyChile();
+      }
+    } catch(e) { /* silencioso */ }
+  }
+  cargarRango();
+
+  async function cargarHistorial() {
+    const desde     = document.getElementById('f-desde').value;
+    const hasta     = document.getElementById('f-hasta').value;
+    const horaDesde = document.getElementById('f-hora-desde').value;
+    const horaHasta = document.getElementById('f-hora-hasta').value;
+
+    if (!desde || !hasta) {
+      alert('Selecciona un rango de fechas');
+      return;
+    }
+
+    // Mostrar estado de carga
+    document.getElementById('table-body').innerHTML =
+      '<div class="hist-loading">Buscando registros...</div>';
+    document.getElementById('table-count').textContent = '—';
+    document.getElementById('stats-grid').style.display = 'none';
+    document.getElementById('hist-temp-card').style.display = 'none';
+    document.getElementById('hist-hum-card').style.display  = 'none';
+
+    try {
+      const params = new URLSearchParams({ desde, hasta, horaDesde, horaHasta });
+      const res = await fetch(`/api/historial?${params}`);
+      if (!res.ok) throw new Error('Error del servidor');
+      const { total, datos } = await res.json();
+
+      document.getElementById('table-count').textContent = `${total} registro${total !== 1 ? 's' : ''}`;
+
+      if (total === 0) {
+        document.getElementById('table-body').innerHTML =
+          '<div class="hist-empty">Sin registros en el período seleccionado</div>';
+        return;
+      }
+
+      // ── Estadísticas ──
+      const temps = datos.map(r => r.temperatura);
+      const hums  = datos.map(r => r.humedad);
+      const avg   = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+
+      document.getElementById('stat-temp-avg').textContent = avg(temps).toFixed(1) + ' °C';
+      document.getElementById('stat-temp-range').textContent =
+        `Mín ${Math.min(...temps).toFixed(1)} · Máx ${Math.max(...temps).toFixed(1)} °C`;
+
+      document.getElementById('stat-hum-avg').textContent = avg(hums).toFixed(1) + ' %';
+      document.getElementById('stat-hum-range').textContent =
+        `Mín ${Math.min(...hums).toFixed(1)} · Máx ${Math.max(...hums).toFixed(1)} %`;
+
+      document.getElementById('stat-total').textContent = total;
+      document.getElementById('stat-periodo').textContent = `${desde} → ${hasta}`;
+
+      const ultimo = datos[datos.length - 1];
+      document.getElementById('stat-ultimo-hora').textContent = ultimo.hora.slice(0, 5);
+      document.getElementById('stat-ultimo-fecha').textContent = ultimo.fecha;
+
+      document.getElementById('stats-grid').style.display = 'grid';
+
+      // ── Gráficos del historial ──
+      // Reducir etiquetas si hay muchos puntos
+      const MAX_PUNTOS = 120;
+      let datosGrafico = datos;
+      if (datos.length > MAX_PUNTOS) {
+        const paso = Math.ceil(datos.length / MAX_PUNTOS);
+        datosGrafico = datos.filter((_, i) => i % paso === 0);
+      }
+
+      const labels = datosGrafico.map(r => r.hora.slice(0, 5));
+      const gridColor = 'rgba(255,255,255,0.07)';
+      const textColor = '#4a5568';
+
+      // Temperatura
+      document.getElementById('hist-temp-card').style.display = '';
+      if (histTempChart) {
+        histTempChart.data.labels = labels;
+        histTempChart.data.datasets[0].data = datosGrafico.map(r => r.temperatura);
+        histTempChart.update();
+      } else {
+        histTempChart = new Chart(document.getElementById('histTempChart'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Temperatura (°C)',
+              data: datosGrafico.map(r => r.temperatura),
+              borderColor: '#27ae60',
+              backgroundColor: 'rgba(39,174,96,0.07)',
+              borderWidth: 1.5,
+              pointRadius: datosGrafico.length > 60 ? 0 : 3,
+              tension: 0.2, fill: false
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)} °C` } }
+            },
+            scales: {
+              x: {
+                ticks: { color: textColor, font: { size: 10 }, maxRotation: 45,
+                  autoSkip: true, maxTicksLimit: 10 },
+                grid: { color: gridColor }
+              },
+              y: {
+                title: { display: true, text: '°C', color: textColor, font: { size: 10 } },
+                ticks: { color: textColor, font: { size: 10 }, callback: v => v.toFixed(1) },
+                grid: { color: gridColor }
+              }
+            }
+          }
+        });
+      }
+
+      // Humedad
+      document.getElementById('hist-hum-card').style.display = '';
+      if (histHumChart) {
+        histHumChart.data.labels = labels;
+        histHumChart.data.datasets[0].data = datosGrafico.map(r => r.humedad);
+        histHumChart.update();
+      } else {
+        histHumChart = new Chart(document.getElementById('histHumChart'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Humedad VWC (%)',
+              data: datosGrafico.map(r => r.humedad),
+              borderColor: '#2980b9',
+              backgroundColor: 'rgba(41,128,185,0.07)',
+              borderWidth: 1.5,
+              pointRadius: datosGrafico.length > 60 ? 0 : 3,
+              tension: 0.2, fill: false
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => `${ctx.parsed.y.toFixed(1)} %` } }
+            },
+            scales: {
+              x: {
+                ticks: { color: textColor, font: { size: 10 }, maxRotation: 45,
+                  autoSkip: true, maxTicksLimit: 10 },
+                grid: { color: gridColor }
+              },
+              y: {
+                min: 0, max: 100,
+                title: { display: true, text: 'VWC %', color: textColor, font: { size: 10 } },
+                ticks: { color: textColor, font: { size: 10 }, callback: v => v + ' %' },
+                grid: { color: gridColor }
+              }
+            }
+          }
+        });
+      }
+
+      // ── Tabla ──
+      // Mostrar últimos 100 registros (más recientes primero en tabla)
+      const filas = [...datos].reverse().slice(0, 100);
+      const tbody = filas.map((r, idx) => `
+        <tr>
+          <td>${datos.length - idx}</td>
+          <td>${r.fecha}</td>
+          <td>${r.hora.slice(0, 8)}</td>
+          <td class="td-temp">${r.temperatura.toFixed(1)} °C</td>
+          <td class="td-hum">${r.humedad.toFixed(1)} %</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('table-body').innerHTML = `
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Temp.</th>
+                <th>Humedad</th>
+              </tr>
+            </thead>
+            <tbody>${tbody}</tbody>
+          </table>
+        </div>
+        ${datos.length > 100 ? `<div class="hist-empty" style="padding:10px 0;">Mostrando los 100 registros más recientes de ${total}</div>` : ''}
+      `;
+
+    } catch(e) {
+      document.getElementById('table-body').innerHTML =
+        `<div class="hist-empty">Error al cargar los datos: ${e.message}</div>`;
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     DESCARGA EXCEL — TODOS LOS REGISTROS DE LA BASE DE DATOS
+  ══════════════════════════════════════════════════════════════ */
+  async function descargarExcel() {
+    const btn = document.getElementById('btn-excel');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="dl-icon">⏳</span> Descargando datos...';
+
+    try {
+      // Pedir TODOS los registros (desde la primera fecha hasta hoy, 00:00–23:59)
+      const res = await fetch('/api/historial?desde=2000-01-01&hasta=2099-12-31&horaDesde=00:00&horaHasta=23:59');
+      if (!res.ok) throw new Error('Error al obtener datos del servidor');
+      const { total, datos } = await res.json();
+
+      if (total === 0) {
+        alert('No hay registros en la base de datos todavía.');
+        return;
+      }
+
+      // ── Construir las filas para el Excel ──
+      // Cabecera exacta pedida por el usuario
+      const cabecera = ['Temperatura (°C)', 'Humedad VWC (%)', 'Fecha', 'Horario'];
+
+      const filas = datos.map(r => [
+        r.temperatura,          // número → Excel lo formatea como número
+        r.humedad,              // número
+        r.fecha,                // 'YYYY-MM-DD' como texto
+        r.hora.slice(0, 8)      // 'HH:MM:SS'
+      ]);
+
+      // ── Crear libro y hoja ──
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([cabecera, ...filas]);
+
+      // ── Anchos de columna ──
+      ws['!cols'] = [
+        { wch: 18 },  // Temperatura
+        { wch: 16 },  // Humedad
+        { wch: 14 },  // Fecha
+        { wch: 12 },  // Horario
+      ];
+
+      // ── Estilo de cabecera (negrita + fondo verde oscuro) ──
+      // SheetJS community edition no aplica estilos de celda directamente,
+      // pero sí podemos marcar el rango de cabecera para que Excel lo lea.
+      // Para estilo completo usaríamos xlsx-style; aquí lo dejamos limpio.
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Registros');
+
+      // ── Nombre del archivo con fecha de hoy ──
+      const hoy = new Date().toLocaleDateString('es-CL').replace(/\//g, '-');
+      const nombreArchivo = `monitor-suelo_${hoy}.xlsx`;
+
+      XLSX.writeFile(wb, nombreArchivo);
+
+      btn.innerHTML = `<span class="dl-icon">✅</span> Descargado (${total} registros)`;
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="dl-icon">⬇️</span> Descargar Excel — todos los registros';
+      }, 3000);
+
+    } catch(e) {
+      alert('Error al descargar: ' + e.message);
+      btn.disabled = false;
+      btn.innerHTML = '<span class="dl-icon">⬇️</span> Descargar Excel — todos los registros';
+    }
+  }
+</script>
+</body>
+</html>
